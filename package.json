@@ -1,0 +1,31 @@
+{
+  "name": "temporal-camunda",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The same order-fulfillment saga implemented twice: once on Temporal, once on Camunda 8",
+  "workspaces": [
+    "shared",
+    "temporal",
+    "camunda"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean && rm -rf .effects",
+
+    "temporal:up": "temporal server start-dev --ip 0.0.0.0 --port 7233 --ui-port 8233",
+    "temporal:worker": "npm run worker -w @saga/temporal",
+    "temporal:scenarios": "npm run run -w @saga/temporal",
+    "temporal:test": "npm run test -w @saga/temporal",
+
+    "camunda:up": "docker compose -f infra/camunda-compose.yml up -d --wait",
+    "camunda:down": "docker compose -f infra/camunda-compose.yml down -v",
+    "camunda:model": "python3 camunda/tools/generate-model.py",
+    "camunda:deploy": "npm run deploy -w @saga/camunda",
+    "camunda:worker": "npm run worker -w @saga/camunda",
+    "camunda:scenarios": "npm run run -w @saga/camunda"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
