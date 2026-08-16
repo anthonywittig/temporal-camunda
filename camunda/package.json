@@ -1,0 +1,15 @@
+{
+  "name": "@saga/camunda",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc --build",
+    "deploy": "npm run build && SAGA_EFFECT_DIR=../.effects node dist/deploy.js",
+    "worker": "npm run build && SAGA_EFFECT_DIR=../.effects node dist/workers.js",
+    "run": "npm run build && SAGA_EFFECT_DIR=../.effects node dist/run-scenarios.js"
+  },
+  "dependencies": {
+    "@camunda8/sdk": "^8.8.13",
+    "@saga/shared": "1.0.0"
+  }
+}

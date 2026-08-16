@@ -1,0 +1,407 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  xmlns:modeler="http://camunda.org/schema/modeler/1.0"
+                  id="Definitions_OrderSaga" targetNamespace="http://bpmn.io/schema/bpmn"
+                  modeler:executionPlatform="Camunda Cloud"
+                  modeler:executionPlatformVersion="8.8.0">
+  <bpmn:error id="Error_StepFailed" name="Step failed" errorCode="STEP_FAILED" />
+  <bpmn:process id="order-saga" name="Order saga" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1" name="Order received">
+      <bpmn:outgoing>Flow_Start_Inventory</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="Task_Inventory" name="Reserve inventory">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="reserve-inventory" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_Inventory</bpmn:incoming>
+      <bpmn:outgoing>Flow_Inventory_Payment</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_Payment" name="Authorize payment">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="authorize-payment" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Inventory_Payment</bpmn:incoming>
+      <bpmn:outgoing>Flow_Payment_Fraud</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_Fraud" name="Screen for fraud">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="screen-fraud" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Payment_Fraud</bpmn:incoming>
+      <bpmn:outgoing>Flow_Fraud_Gateway</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Gateway_Risk" name="High risk?" default="Flow_Risk_Low">
+      <bpmn:incoming>Flow_Fraud_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Risk_Low</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Risk_High</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Gateway_Join">
+      <bpmn:incoming>Flow_Risk_Low</bpmn:incoming>
+      <bpmn:incoming>Flow_Approved</bpmn:incoming>
+      <bpmn:outgoing>Flow_Join_Shipment</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Task_Shipment" name="Create shipment">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="create-shipment" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Join_Shipment</bpmn:incoming>
+      <bpmn:outgoing>Flow_Shipment_Capture</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_Capture" name="Capture payment">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="capture-payment" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Shipment_Capture</bpmn:incoming>
+      <bpmn:outgoing>Flow_Capture_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="EndEvent_Completed" name="Completed">
+      <bpmn:extensionElements>
+        <zeebe:ioMapping>
+          <zeebe:output source="=&#34;completed&#34;" target="outcome" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Capture_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="Task_ReleaseInventory" name="Release inventory" isForCompensation="true">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="release-inventory" retries="3" />
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_VoidAuth" name="Void authorization" isForCompensation="true">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="void-authorization" retries="3" />
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_CancelShipment" name="Cancel shipment" isForCompensation="true">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="cancel-shipment" retries="3" />
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:boundaryEvent id="Boundary_Comp_Inventory" attachedToRef="Task_Inventory">
+      <bpmn:compensateEventDefinition id="CompensateDef_Boundary_Comp_Inventory" />
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="Boundary_Comp_Payment" attachedToRef="Task_Payment">
+      <bpmn:compensateEventDefinition id="CompensateDef_Boundary_Comp_Payment" />
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="Boundary_Comp_Shipment" attachedToRef="Task_Shipment">
+      <bpmn:compensateEventDefinition id="CompensateDef_Boundary_Comp_Shipment" />
+    </bpmn:boundaryEvent>
+    <bpmn:userTask id="Task_Review" name="Fraud review">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Risk_High</bpmn:incoming>
+      <bpmn:outgoing>Flow_Review_Gateway</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Approved" name="Approved?" default="Flow_Rejected">
+      <bpmn:incoming>Flow_Review_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approved</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Rejected</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:intermediateThrowEvent id="Throw_Comp_Rejected" name="Undo order">
+      <bpmn:incoming>Flow_Rejected</bpmn:incoming>
+      <bpmn:outgoing>Flow_Rejected_End</bpmn:outgoing>
+      <bpmn:compensateEventDefinition id="CompensateDef_Throw_Comp_Rejected" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:endEvent id="EndEvent_Rejected" name="Rejected">
+      <bpmn:extensionElements>
+        <zeebe:ioMapping>
+          <zeebe:output source="=&#34;rejected&#34;" target="outcome" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Rejected_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:boundaryEvent id="Boundary_Err_Task_Inventory" attachedToRef="Task_Inventory" cancelActivity="true">
+      <bpmn:outgoing>Flow_Err_Task_Inventory</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="ErrorDef_Boundary_Err_Task_Inventory" errorRef="Error_StepFailed" />
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="Boundary_Err_Task_Payment" attachedToRef="Task_Payment" cancelActivity="true">
+      <bpmn:outgoing>Flow_Err_Task_Payment</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="ErrorDef_Boundary_Err_Task_Payment" errorRef="Error_StepFailed" />
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="Boundary_Err_Task_Fraud" attachedToRef="Task_Fraud" cancelActivity="true">
+      <bpmn:outgoing>Flow_Err_Task_Fraud</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="ErrorDef_Boundary_Err_Task_Fraud" errorRef="Error_StepFailed" />
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="Boundary_Err_Task_Shipment" attachedToRef="Task_Shipment" cancelActivity="true">
+      <bpmn:outgoing>Flow_Err_Task_Shipment</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="ErrorDef_Boundary_Err_Task_Shipment" errorRef="Error_StepFailed" />
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="Boundary_Err_Task_Capture" attachedToRef="Task_Capture" cancelActivity="true">
+      <bpmn:outgoing>Flow_Err_Task_Capture</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="ErrorDef_Boundary_Err_Task_Capture" errorRef="Error_StepFailed" />
+    </bpmn:boundaryEvent>
+    <bpmn:exclusiveGateway id="Gateway_Failed">
+      <bpmn:incoming>Flow_Err_Task_Inventory</bpmn:incoming>
+      <bpmn:incoming>Flow_Err_Task_Payment</bpmn:incoming>
+      <bpmn:incoming>Flow_Err_Task_Fraud</bpmn:incoming>
+      <bpmn:incoming>Flow_Err_Task_Shipment</bpmn:incoming>
+      <bpmn:incoming>Flow_Err_Task_Capture</bpmn:incoming>
+      <bpmn:outgoing>Flow_Failed_Throw</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:intermediateThrowEvent id="Throw_Comp_Failed" name="Undo order">
+      <bpmn:incoming>Flow_Failed_Throw</bpmn:incoming>
+      <bpmn:outgoing>Flow_Failed_End</bpmn:outgoing>
+      <bpmn:compensateEventDefinition id="CompensateDef_Throw_Comp_Failed" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:endEvent id="EndEvent_Failed" name="Failed">
+      <bpmn:extensionElements>
+        <zeebe:ioMapping>
+          <zeebe:output source="=&#34;failed&#34;" target="outcome" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Failed_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Start_Inventory" sourceRef="StartEvent_1" targetRef="Task_Inventory" />
+    <bpmn:sequenceFlow id="Flow_Inventory_Payment" sourceRef="Task_Inventory" targetRef="Task_Payment" />
+    <bpmn:sequenceFlow id="Flow_Payment_Fraud" sourceRef="Task_Payment" targetRef="Task_Fraud" />
+    <bpmn:sequenceFlow id="Flow_Fraud_Gateway" sourceRef="Task_Fraud" targetRef="Gateway_Risk" />
+    <bpmn:sequenceFlow id="Flow_Risk_Low" sourceRef="Gateway_Risk" targetRef="Gateway_Join" name="low risk" />
+    <bpmn:sequenceFlow id="Flow_Risk_High" sourceRef="Gateway_Risk" targetRef="Task_Review" name="high risk">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">=fraudRisk = "high"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Review_Gateway" sourceRef="Task_Review" targetRef="Gateway_Approved" />
+    <bpmn:sequenceFlow id="Flow_Approved" sourceRef="Gateway_Approved" targetRef="Gateway_Join" name="approve">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">=reviewDecision = "approve"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Rejected" sourceRef="Gateway_Approved" targetRef="Throw_Comp_Rejected" name="reject" />
+    <bpmn:sequenceFlow id="Flow_Rejected_End" sourceRef="Throw_Comp_Rejected" targetRef="EndEvent_Rejected" />
+    <bpmn:sequenceFlow id="Flow_Join_Shipment" sourceRef="Gateway_Join" targetRef="Task_Shipment" />
+    <bpmn:sequenceFlow id="Flow_Shipment_Capture" sourceRef="Task_Shipment" targetRef="Task_Capture" />
+    <bpmn:sequenceFlow id="Flow_Capture_End" sourceRef="Task_Capture" targetRef="EndEvent_Completed" />
+    <bpmn:sequenceFlow id="Flow_Err_Task_Inventory" sourceRef="Boundary_Err_Task_Inventory" targetRef="Gateway_Failed" />
+    <bpmn:sequenceFlow id="Flow_Err_Task_Payment" sourceRef="Boundary_Err_Task_Payment" targetRef="Gateway_Failed" />
+    <bpmn:sequenceFlow id="Flow_Err_Task_Fraud" sourceRef="Boundary_Err_Task_Fraud" targetRef="Gateway_Failed" />
+    <bpmn:sequenceFlow id="Flow_Err_Task_Shipment" sourceRef="Boundary_Err_Task_Shipment" targetRef="Gateway_Failed" />
+    <bpmn:sequenceFlow id="Flow_Err_Task_Capture" sourceRef="Boundary_Err_Task_Capture" targetRef="Gateway_Failed" />
+    <bpmn:sequenceFlow id="Flow_Failed_Throw" sourceRef="Gateway_Failed" targetRef="Throw_Comp_Failed" />
+    <bpmn:sequenceFlow id="Flow_Failed_End" sourceRef="Throw_Comp_Failed" targetRef="EndEvent_Failed" />
+    <bpmn:association id="Association_Inventory" associationDirection="One" sourceRef="Boundary_Comp_Inventory" targetRef="Task_ReleaseInventory" />
+    <bpmn:association id="Association_Payment" associationDirection="One" sourceRef="Boundary_Comp_Payment" targetRef="Task_VoidAuth" />
+    <bpmn:association id="Association_Shipment" associationDirection="One" sourceRef="Boundary_Comp_Shipment" targetRef="Task_CancelShipment" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="order-saga">
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="152" y="262" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="137" y="303" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Inventory_di" bpmnElement="Task_Inventory">
+        <dc:Bounds x="240" y="240" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Payment_di" bpmnElement="Task_Payment">
+        <dc:Bounds x="400" y="240" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Fraud_di" bpmnElement="Task_Fraud">
+        <dc:Bounds x="560" y="240" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Risk_di" bpmnElement="Gateway_Risk">
+        <dc:Bounds x="720" y="255" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="705" y="310" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Join_di" bpmnElement="Gateway_Join">
+        <dc:Bounds x="1060" y="255" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Shipment_di" bpmnElement="Task_Shipment">
+        <dc:Bounds x="1160" y="240" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Capture_di" bpmnElement="Task_Capture">
+        <dc:Bounds x="1320" y="240" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Completed_di" bpmnElement="EndEvent_Completed">
+        <dc:Bounds x="1480" y="262" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1465" y="303" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ReleaseInventory_di" bpmnElement="Task_ReleaseInventory">
+        <dc:Bounds x="240" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_VoidAuth_di" bpmnElement="Task_VoidAuth">
+        <dc:Bounds x="400" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_CancelShipment_di" bpmnElement="Task_CancelShipment">
+        <dc:Bounds x="1160" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Boundary_Comp_Inventory_di" bpmnElement="Boundary_Comp_Inventory">
+        <dc:Bounds x="270" y="222" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Boundary_Comp_Payment_di" bpmnElement="Boundary_Comp_Payment">
+        <dc:Bounds x="430" y="222" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Boundary_Comp_Shipment_di" bpmnElement="Boundary_Comp_Shipment">
+        <dc:Bounds x="1190" y="222" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Review_di" bpmnElement="Task_Review">
+        <dc:Bounds x="790" y="400" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Approved_di" bpmnElement="Gateway_Approved">
+        <dc:Bounds x="950" y="415" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="935" y="470" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Throw_Comp_Rejected_di" bpmnElement="Throw_Comp_Rejected">
+        <dc:Bounds x="1052" y="422" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1037" y="463" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Rejected_di" bpmnElement="EndEvent_Rejected">
+        <dc:Bounds x="1150" y="422" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1135" y="463" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Boundary_Err_Task_Inventory_di" bpmnElement="Boundary_Err_Task_Inventory">
+        <dc:Bounds x="302" y="302" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Boundary_Err_Task_Payment_di" bpmnElement="Boundary_Err_Task_Payment">
+        <dc:Bounds x="462" y="302" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Boundary_Err_Task_Fraud_di" bpmnElement="Boundary_Err_Task_Fraud">
+        <dc:Bounds x="622" y="302" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Boundary_Err_Task_Shipment_di" bpmnElement="Boundary_Err_Task_Shipment">
+        <dc:Bounds x="1222" y="302" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Boundary_Err_Task_Capture_di" bpmnElement="Boundary_Err_Task_Capture">
+        <dc:Bounds x="1382" y="302" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Failed_di" bpmnElement="Gateway_Failed">
+        <dc:Bounds x="1450" y="555" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Throw_Comp_Failed_di" bpmnElement="Throw_Comp_Failed">
+        <dc:Bounds x="1552" y="562" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1537" y="603" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Failed_di" bpmnElement="EndEvent_Failed">
+        <dc:Bounds x="1650" y="562" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1635" y="603" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_Start_Inventory_di" bpmnElement="Flow_Start_Inventory">
+        <di:waypoint x="188" y="280" />
+        <di:waypoint x="240" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Inventory_Payment_di" bpmnElement="Flow_Inventory_Payment">
+        <di:waypoint x="340" y="280" />
+        <di:waypoint x="400" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Payment_Fraud_di" bpmnElement="Flow_Payment_Fraud">
+        <di:waypoint x="500" y="280" />
+        <di:waypoint x="560" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Fraud_Gateway_di" bpmnElement="Flow_Fraud_Gateway">
+        <di:waypoint x="660" y="280" />
+        <di:waypoint x="720" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Risk_Low_di" bpmnElement="Flow_Risk_Low">
+        <di:waypoint x="770" y="280" />
+        <di:waypoint x="1060" y="280" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="778" y="260" width="60" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Risk_High_di" bpmnElement="Flow_Risk_High">
+        <di:waypoint x="745" y="305" />
+        <di:waypoint x="745" y="440" />
+        <di:waypoint x="790" y="440" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="753" y="323" width="60" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Review_Gateway_di" bpmnElement="Flow_Review_Gateway">
+        <di:waypoint x="890" y="440" />
+        <di:waypoint x="950" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Approved_di" bpmnElement="Flow_Approved">
+        <di:waypoint x="975" y="415" />
+        <di:waypoint x="975" y="280" />
+        <di:waypoint x="1060" y="280" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="983" y="433" width="60" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Rejected_di" bpmnElement="Flow_Rejected">
+        <di:waypoint x="1000" y="440" />
+        <di:waypoint x="1052" y="440" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1008" y="420" width="60" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Rejected_End_di" bpmnElement="Flow_Rejected_End">
+        <di:waypoint x="1088" y="440" />
+        <di:waypoint x="1150" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Join_Shipment_di" bpmnElement="Flow_Join_Shipment">
+        <di:waypoint x="1110" y="280" />
+        <di:waypoint x="1160" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Shipment_Capture_di" bpmnElement="Flow_Shipment_Capture">
+        <di:waypoint x="1260" y="280" />
+        <di:waypoint x="1320" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Capture_End_di" bpmnElement="Flow_Capture_End">
+        <di:waypoint x="1420" y="280" />
+        <di:waypoint x="1480" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Err_Task_Inventory_di" bpmnElement="Flow_Err_Task_Inventory">
+        <di:waypoint x="320" y="338" />
+        <di:waypoint x="320" y="580" />
+        <di:waypoint x="1450" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Err_Task_Payment_di" bpmnElement="Flow_Err_Task_Payment">
+        <di:waypoint x="480" y="338" />
+        <di:waypoint x="480" y="580" />
+        <di:waypoint x="1450" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Err_Task_Fraud_di" bpmnElement="Flow_Err_Task_Fraud">
+        <di:waypoint x="640" y="338" />
+        <di:waypoint x="640" y="580" />
+        <di:waypoint x="1450" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Err_Task_Shipment_di" bpmnElement="Flow_Err_Task_Shipment">
+        <di:waypoint x="1240" y="338" />
+        <di:waypoint x="1240" y="580" />
+        <di:waypoint x="1450" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Err_Task_Capture_di" bpmnElement="Flow_Err_Task_Capture">
+        <di:waypoint x="1400" y="338" />
+        <di:waypoint x="1400" y="580" />
+        <di:waypoint x="1450" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Failed_Throw_di" bpmnElement="Flow_Failed_Throw">
+        <di:waypoint x="1500" y="580" />
+        <di:waypoint x="1552" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Failed_End_di" bpmnElement="Flow_Failed_End">
+        <di:waypoint x="1588" y="580" />
+        <di:waypoint x="1650" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_Inventory_di" bpmnElement="Association_Inventory">
+        <di:waypoint x="288" y="222" />
+        <di:waypoint x="288" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_Payment_di" bpmnElement="Association_Payment">
+        <di:waypoint x="448" y="222" />
+        <di:waypoint x="448" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_Shipment_di" bpmnElement="Association_Shipment">
+        <di:waypoint x="1208" y="222" />
+        <di:waypoint x="1208" y="140" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
